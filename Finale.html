@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Telemedicine Platform</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  input, select, button { padding: 8px; margin: 5px 0; width: 100%; max-width: 300px; }
+  .hidden { display: none; }
+  .container { max-width: 400px; margin: auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Telemedicine Platform</h1>
+
+  <div id="register-section">
+    <h2>Register</h2>
+    <input id="reg-username" placeholder="Username" />
+    <input id="reg-password" placeholder="Password" type="password" />
+    <select id="reg-role">
+      <option value="patient">Patient</option>
+      <option value="doctor">Doctor</option>
+    </select>
+    <button onclick="register()">Register</button>
+    <p id="reg-msg"></p>
+  </div>
+
+  <div id="login-section">
+    <h2>Login</h2>
+    <input id="login-username" placeholder="Username" />
+    <input id="login-password" placeholder="Password" type="password" />
+    <button onclick="login()">Login</button>
+    <p id="login-msg"></p>
+  </div>
+
+  <div id="app-section" class="hidden">
+    <h2>Welcome, <span id="username-display"></span> (<span id="role-display"></span>)</h2>
+    <button onclick="logout()">Logout</button>
+
+    <div id="booking-section" class="hidden">
+      <h3>Book Appointment</h3>
+      <select id="doctor-select"></select>
+      <input id="appt-time" type="datetime-local" />
+      <button onclick="bookAppointment()">Book</button>
+      <p id="booking-msg"></p>
+    </div>
+
+    <h3>Your Appointments</h3>
+    <ul id="appointments-list"></ul>
+  </div>
+</div>
+
+<script>
+  const apiUrl = 'http://127.0.0.1:5000';
+
+  function register() {
+    const username = document.getElementById('reg-username').value;
+    const password = document.getElementById('reg-password').value;
+    const role = document.getElementById('reg-role').value;
+    fetch(apiUrl + '/register', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, password, role})
+    }).then(res => res.json()).then(data => {
+      document.getElementById('reg-msg').innerText = data.msg || JSON.stringify(data);
+    });
+  }
+
+  function login() {
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+    fetch(apiUrl + '/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, password})
+    }).then(res => {
+      if (!res.ok) throw new Error('Login failed');
+      return res.json();
+    }).then(data => {
+      localStorage.setItem('token', data.access_token);
+      const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+      localStorage.setItem('user', JSON.stringify(payload.identity));
+      showAppSection();
+    }).catch(err => {
+      document.getElementById('login-msg').innerText = 'Invalid credentials';
+    });
+  }
+
+  function logout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    document.getElementById('app-section').classList.add('hidden');
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('register-section').classList.remove('hidden');
+  }
+
+  function showAppSection() {
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user) return logout();
+
+    document.getElementById('username-display').innerText = user.username;
+    document.getElementById('role-display').innerText = user.role;
+
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('register-section').classList.add('hidden');
+    document.getElementById('app-section').classList.remove('hidden');
+
+    if (user.role === 'patient') {
+      document.getElementById('booking-section').classList.remove('hidden');
+      loadDoctors();
+    }
+
+    loadAppointments();
+  }
+
+  function loadDoctors() {
+    fetch(apiUrl + '/doctors').then(res => res.json()).then(data => {
+      const select = document.getElementById('doctor-select');
+      select.innerHTML = '';
+      data.forEach(doc => {
+        const option = document.createElement('option');
+        option.value = doc.id;
+        option.text = doc.username;
+        select.appendChild(option);
+      });
+    });
+  }
+
+  function bookAppointment() {
+    const token = localStorage.getItem('token');
+    const doctor_id = document.getElementById('doctor-select').value;
+    const scheduled_time = document.getElementById('appt-time').value;
+    fetch(apiUrl + '/appointments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({doctor_id, scheduled_time})
+    }).then(res => res.json()).then(data => {
+      document.getElementById('booking-msg').innerText = data.msg || JSON.stringify(data);
+      loadAppointments();
+    });
+  }
+
+  function loadAppointments() {
+    const token = localStorage.getItem('token');
+    fetch(apiUrl + '/appointments', {
+      headers: {'Authorization': 'Bearer ' + token}
+    }).then(res => res.json()).then(data => {
+      const list = document.getElementById('appointments-list');
+      list.innerHTML = '';
+      if(data.length === 0) {
+        list.innerHTML = '<li>No appointments</li>';
+        return;
+      }
+      data.forEach(appt => {
+        list.innerHTML += `<li>Appointment ID: ${appt.id} - Scheduled: ${new Date(appt.scheduled_time).toLocaleString()}</li>`;
+      });
+    });
+  }
+
+  // Auto-login if token exists
+  if (localStorage.getItem('token')) {
+    showAppSection();
+  }
+</script>
+
+</body>
+</html>
